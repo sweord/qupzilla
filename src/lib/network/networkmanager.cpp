@@ -244,7 +244,7 @@ void NetworkManager::loadSettings()
     proxy.setUser(settings.value("Username", QString()).toString());
     proxy.setPassword(settings.value("Password", QString()).toString());
     settings.endGroup();
-    QNetworkProxy::setApplicationProxy(proxy);
+//    QNetworkProxy::setApplicationProxy(proxy);
 
     m_urlInterceptor->loadSettings();
 }
