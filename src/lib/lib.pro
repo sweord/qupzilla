@@ -471,7 +471,10 @@ win32 {
     HEADERS += other/registerqappassociation.h
     SOURCES += other/registerqappassociation.cpp
 
-    LIBS += -llibeay32
+#    LIBS += -llibeay32
+
+    INCLUDEPATH += D:/OpenSSL-Win32/include
+    LIBS +=  -LD:/OpenSSL-Win32/lib/VC -lssleay32MD -llibeay32MD
 } else {
     HEADERS += app/fileprinter.h
     SOURCES += app/fileprinter.cpp

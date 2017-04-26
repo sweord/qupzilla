@@ -108,3 +108,5 @@ isEmpty(QMAKE_LRELEASE) {
 isEmpty(QMAKE_LFLAGS_RPATH) {
     QMAKE_LFLAGS_RPATH = -Wl,-rpath,
 }
+
+CONFIG += debug
