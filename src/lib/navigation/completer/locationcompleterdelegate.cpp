@@ -16,10 +16,11 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 * ============================================================ */
 #include "locationcompleterdelegate.h"
-#include "locationcompleterview.h"
 #include "locationcompletermodel.h"
+#include "locationbar.h"
 #include "iconprovider.h"
 #include "qzsettings.h"
+#include "mainapplication.h"
 
 #include <algorithm>
 
@@ -28,12 +29,26 @@
 #include <QMouseEvent>
 #include <QTextLayout>
 
-LocationCompleterDelegate::LocationCompleterDelegate(LocationCompleterView* parent)
+static bool isUrlOrDomain(const QString &text)
+{
+    QUrl url(text);
+    if (!url.scheme().isEmpty() && (!url.host().isEmpty() || !url.path().isEmpty())) {
+        return true;
+    }
+    if (text.contains(QL1C('.')) && !text.contains(QL1C(' '))) {
+        return true;
+    }
+    if (text == QL1S("localhost")) {
+        return true;
+    }
+    return false;
+}
+
+LocationCompleterDelegate::LocationCompleterDelegate(QObject *parent)
     : QStyledItemDelegate(parent)
     , m_rowHeight(0)
     , m_padding(0)
     , m_drawSwitchToTab(true)
-    , m_view(parent)
 {
 }
 
@@ -57,21 +72,12 @@ void LocationCompleterDelegate::paint(QPainter* painter, const QStyleOptionViewI
     int leftPosition = m_padding * 2;
     int rightPosition = opt.rect.right() - m_padding;
 
-    opt.state &= ~QStyle::State_MouseOver;
+    opt.state |= QStyle::State_Active;
 
-    if (m_view->hoveredIndex() == index) {
-        opt.state |= QStyle::State_Selected;
-    } else {
-        opt.state &= ~QStyle::State_Selected;
-    }
+    const QIcon::Mode iconMode = opt.state & QStyle::State_Selected ? QIcon::Selected : QIcon::Normal;
 
     const QPalette::ColorRole colorRole = opt.state & QStyle::State_Selected ? QPalette::HighlightedText : QPalette::Text;
     const QPalette::ColorRole colorLinkRole = opt.state & QStyle::State_Selected ? QPalette::HighlightedText : QPalette::Link;
-
-    QPalette::ColorGroup cg = opt.state & QStyle::State_Enabled ? QPalette::Normal : QPalette::Disabled;
-    if (cg == QPalette::Normal && !(opt.state & QStyle::State_Active)) {
-        cg = QPalette::Inactive;
-    }
 
 #ifdef Q_OS_WIN
     opt.palette.setColor(QPalette::All, QPalette::HighlightedText, opt.palette.color(QPalette::Active, QPalette::Text));
@@ -79,16 +85,23 @@ void LocationCompleterDelegate::paint(QPainter* painter, const QStyleOptionViewI
 #endif
 
     QPalette textPalette = opt.palette;
-    textPalette.setCurrentColorGroup(cg);
+    textPalette.setCurrentColorGroup(opt.state & QStyle::State_Enabled ? QPalette::Normal : QPalette::Disabled);
 
     // Draw background
     style->drawPrimitive(QStyle::PE_PanelItemViewItem, &opt, painter, w);
+
+    const bool isVisitSearchItem = index.data(LocationCompleterModel::VisitSearchItemRole).toBool();
+    const bool isSearchSuggestion = index.data(LocationCompleterModel::SearchSuggestionRole).toBool();
+    const bool isWebSearch = qzSettings->searchFromAddressBar && !isUrlOrDomain(m_originalText.trimmed());
 
     // Draw icon
     const int iconSize = 16;
     const int iconYPos = center - (iconSize / 2);
     QRect iconRect(leftPosition, iconYPos, iconSize, iconSize);
-    QPixmap pixmap = index.data(Qt::DecorationRole).value<QIcon>().pixmap(iconSize);
+    QPixmap pixmap = index.data(Qt::DecorationRole).value<QIcon>().pixmap(iconSize, iconMode);
+    if (isSearchSuggestion || (isVisitSearchItem && isWebSearch)) {
+        pixmap = QIcon::fromTheme(QSL("edit-find"), QIcon(QSL(":icons/menu/search-icon.svg"))).pixmap(iconSize, iconMode);
+    }
     painter->drawPixmap(iconRect, pixmap);
     leftPosition = iconRect.right() + m_padding * 2;
 
@@ -100,38 +113,68 @@ void LocationCompleterDelegate::paint(QPainter* painter, const QStyleOptionViewI
         starPixmapWidth = starSize.width();
         QPoint pos(rightPosition - starPixmapWidth, center - starSize.height() / 2);
         QRect starRect(pos, starSize);
-        painter->drawPixmap(starRect, icon.pixmap(starSize));
+        painter->drawPixmap(starRect, icon.pixmap(starSize, iconMode));
     }
 
-    const QString searchText = index.data(LocationCompleterModel::SearchStringRole).toString();
+    QString searchText = index.data(LocationCompleterModel::SearchStringRole).toString();
 
     // Draw title
-    const int leftTitleEdge = leftPosition + 2;
-    // RTL Support: remove conflicting of right-aligned text and starpixmap!
-    const int rightTitleEdge = rightPosition - m_padding - starPixmapWidth;
-    QRect titleRect(leftTitleEdge, opt.rect.top() + m_padding, rightTitleEdge - leftTitleEdge, titleMetrics.height());
+    leftPosition += 2;
+    QRect titleRect(leftPosition, center - titleMetrics.height() / 2, opt.rect.width() * 0.6, titleMetrics.height());
     QString title = index.data(LocationCompleterModel::TitleRole).toString();
     painter->setFont(titleFont);
 
-    viewItemDrawText(painter, &opt, titleRect, title, textPalette.color(colorRole), searchText);
+    if (isVisitSearchItem) {
+        title = m_originalText.trimmed();
+        if (searchText == title) {
+            searchText.clear();
+        }
+    }
+
+    leftPosition += viewItemDrawText(painter, &opt, titleRect, title, textPalette.color(colorRole), searchText);
+    leftPosition += m_padding * 2;
+
+    // Trim link to maximum number of characters that can be visible, otherwise there may be perf issue with huge URLs
+    const int maxChars = (opt.rect.width() - leftPosition) / opt.fontMetrics.width(QL1C('i'));
+    QString link;
+    const QByteArray linkArray = index.data(Qt::DisplayRole).toByteArray();
+    if (!linkArray.startsWith("data") && !linkArray.startsWith("javascript")) {
+        link = QString::fromUtf8(QByteArray::fromPercentEncoding(linkArray)).left(maxChars);
+    } else {
+        link = QString::fromLatin1(linkArray.left(maxChars));
+    }
+
+    if (isVisitSearchItem || isSearchSuggestion) {
+        if (!isSearchSuggestion && !isWebSearch) {
+            link = tr("Visit");
+        } else if (opt.state.testFlag(QStyle::State_Selected) || opt.state.testFlag(QStyle::State_MouseOver)) {
+            QString searchEngineName;
+            const int firstSpacePos = title.indexOf(QL1C(' '));
+            if (firstSpacePos != -1) {
+                const QString shortcut = title.left(firstSpacePos);
+                searchEngineName = mApp->searchEnginesManager()->engineForShortcut(shortcut).name;
+            }
+            if (searchEngineName.isEmpty()) {
+                searchEngineName = LocationBar::searchEngine().name;
+            }
+            link = tr("Search with %1").arg(searchEngineName);
+        } else {
+            link.clear();
+        }
+    }
+
+    // Draw separator
+    if (!link.isEmpty()) {
+        QChar separator = QL1C('-');
+        QRect separatorRect(leftPosition, center - titleMetrics.height() / 2, titleMetrics.width(separator), titleMetrics.height());
+        style->drawItemText(painter, separatorRect, Qt::AlignCenter, textPalette, true, separator, colorRole);
+        leftPosition += separatorRect.width() + m_padding * 2;
+    }
 
     // Draw link
-    const int infoYPos = titleRect.bottom() + opt.fontMetrics.leading() + 2;
-    QRect linkRect(titleRect.x(), infoYPos, titleRect.width(), opt.fontMetrics.height());
-    const QByteArray linkArray = index.data(Qt::DisplayRole).toByteArray();
-
-    // Let's assume that more than 500 characters won't fit in line on any display...
-    // Fixes performance when trying to get elidedText for a really long
-    // (length() > 1000000) urls - data: urls can get that long
-
-    QString link;
-    if (!linkArray.startsWith("data") && !linkArray.startsWith("javascript")) {
-        link = QString::fromUtf8(QByteArray::fromPercentEncoding(linkArray)).left(500);
-    }
-    else {
-        link = QString::fromLatin1(linkArray.left(500));
-    }
-
+    const int leftLinkEdge = leftPosition;
+    const int rightLinkEdge = rightPosition - m_padding - starPixmapWidth;
+    QRect linkRect(leftLinkEdge, center - opt.fontMetrics.height() / 2, rightLinkEdge - leftLinkEdge, opt.fontMetrics.height());
     painter->setFont(opt.font);
 
     // Draw url (or switch to tab)
@@ -140,15 +183,16 @@ void LocationCompleterDelegate::paint(QPainter* painter, const QStyleOptionViewI
     if (drawSwitchToTab() && tabPos != -1) {
         const QIcon tabIcon = QIcon(QSL(":icons/menu/tab.svg"));
         QRect iconRect(linkRect);
-        iconRect.setX(iconRect.x() + m_padding * 2);
+        iconRect.setX(iconRect.x());
         iconRect.setWidth(16);
-        tabIcon.paint(painter, iconRect);
+        painter->drawPixmap(iconRect, tabIcon.pixmap(iconRect.size(), iconMode));
 
         QRect textRect(linkRect);
         textRect.setX(textRect.x() + m_padding + 16 + m_padding);
-        viewItemDrawText(painter, &opt, textRect, LocationCompleterView::tr("Switch to tab"), textPalette.color(colorLinkRole));
-    }
-    else {
+        viewItemDrawText(painter, &opt, textRect, tr("Switch to tab"), textPalette.color(colorLinkRole));
+    } else if (isVisitSearchItem || isSearchSuggestion) {
+        viewItemDrawText(painter, &opt, linkRect, link, textPalette.color(colorLinkRole));
+    } else {
         viewItemDrawText(painter, &opt, linkRect, link, textPalette.color(colorLinkRole), searchText);
     }
 
@@ -178,8 +222,7 @@ QSize LocationCompleterDelegate::sizeHint(const QStyleOptionViewItem &option, co
 
         const QFontMetrics titleMetrics(titleFont);
 
-        // 2 px bigger space between title and link because of underlining
-        m_rowHeight = 2 * m_padding + opt.fontMetrics.leading() + opt.fontMetrics.height() + titleMetrics.height() + 2;
+        m_rowHeight = 4 * m_padding + qMax(16, titleMetrics.height());
     }
 
     return QSize(200, m_rowHeight);
@@ -188,6 +231,11 @@ QSize LocationCompleterDelegate::sizeHint(const QStyleOptionViewItem &option, co
 void LocationCompleterDelegate::setShowSwitchToTab(bool enable)
 {
     m_drawSwitchToTab = enable;
+}
+
+void LocationCompleterDelegate::setOriginalText(const QString &originalText)
+{
+    m_originalText = originalText;
 }
 
 bool LocationCompleterDelegate::drawSwitchToTab() const
@@ -219,23 +267,17 @@ static QSizeF viewItemTextLayout(QTextLayout &textLayout, int lineWidth)
 
 // most of codes taken from QCommonStylePrivate::viewItemDrawText()
 // added highlighting and simplified for single-line textlayouts
-void LocationCompleterDelegate::viewItemDrawText(QPainter *p, const QStyleOptionViewItem *option, const QRect &rect,
-                                                 const QString &text, const QColor &color, const QString &searchText) const
+int LocationCompleterDelegate::viewItemDrawText(QPainter *p, const QStyleOptionViewItem *option, const QRect &rect,
+                                                const QString &text, const QColor &color, const QString &searchText) const
 {
     if (text.isEmpty()) {
-        return;
+        return 0;
     }
 
-    const QWidget* widget = option->widget;
-    const QStyle* proxyStyle = widget ? widget->style()->proxy() : QApplication::style()->proxy();
-    const int textMargin = proxyStyle->pixelMetric(QStyle::PM_FocusFrameHMargin, 0, widget) + 1;
-
-    QRect textRect = rect.adjusted(textMargin, 0, -textMargin, 0); // remove width padding
     const QFontMetrics fontMetrics(p->font());
-    QString elidedText = fontMetrics.elidedText(text, option->textElideMode, textRect.width());
+    QString elidedText = fontMetrics.elidedText(text, option->textElideMode, rect.width());
     QTextOption textOption;
     textOption.setWrapMode(QTextOption::NoWrap);
-    textOption.setTextDirection(text.isRightToLeft() ? Qt::RightToLeft : Qt::LeftToRight);
     textOption.setAlignment(QStyle::visualAlignment(textOption.textDirection(), option->displayAlignment));
     QTextLayout textLayout;
     textLayout.setFont(p->font());
@@ -308,35 +350,37 @@ void LocationCompleterDelegate::viewItemDrawText(QPainter *p, const QStyleOption
     }
 
     // do layout
-    viewItemTextLayout(textLayout, textRect.width());
+    viewItemTextLayout(textLayout, rect.width());
 
     if (textLayout.lineCount() <= 0) {
-        return;
+        return 0;
     }
 
     QTextLine textLine = textLayout.lineAt(0);
 
     // if elidedText after highlighting is longer
     // than available width then re-elide it and redo layout
-    int diff = textLine.naturalTextWidth() - textRect.width();
+    int diff = textLine.naturalTextWidth() - rect.width();
     if (diff > 0) {
-        elidedText = fontMetrics.elidedText(elidedText, option->textElideMode, textRect.width() - diff);
+        elidedText = fontMetrics.elidedText(elidedText, option->textElideMode, rect.width() - diff);
 
         textLayout.setText(elidedText);
         // redo layout
-        viewItemTextLayout(textLayout, textRect.width());
+        viewItemTextLayout(textLayout, rect.width());
 
         if (textLayout.lineCount() <= 0) {
-            return;
+            return 0;
         }
         textLine = textLayout.lineAt(0);
     }
 
     // draw line
     p->setPen(color);
-    qreal width = qMax<qreal>(textRect.width(), textLayout.lineAt(0).width());
-    const QRect &layoutRect = QStyle::alignedRect(option->direction, option->displayAlignment, QSize(int(width), int(textLine.height())), textRect);
+    qreal width = qMax<qreal>(rect.width(), textLayout.lineAt(0).width());
+    const QRect &layoutRect = QStyle::alignedRect(option->direction, option->displayAlignment, QSize(int(width), int(textLine.height())), rect);
     const QPointF &position = layoutRect.topLeft();
 
     textLine.draw(p, position);
+
+    return qMin<int>(rect.width(), textLayout.lineAt(0).naturalTextWidth());
 }

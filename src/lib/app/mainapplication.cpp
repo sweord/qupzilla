@@ -110,6 +110,7 @@ MainApplication::MainApplication(int &argc, char** argv)
     setApplicationName(QLatin1String("QupZilla"));
     setOrganizationDomain(QLatin1String("qupzilla"));
     setWindowIcon(QIcon::fromTheme(QSL("qupzilla"), QIcon(QSL(":icons/exeicons/qupzilla-window.png"))));
+    setDesktopFileName(QSL("org.qupzilla.QupZilla"));
 
 #ifdef GIT_REVISION
     setApplicationVersion(QSL("%1 (%2)").arg(Qz::VERSION, GIT_REVISION));
@@ -911,6 +912,7 @@ void MainApplication::loadSettings()
     webSettings->setAttribute(QWebEngineSettings::HyperlinkAuditingEnabled, false);
     webSettings->setAttribute(QWebEngineSettings::FullScreenSupportEnabled, true);
     webSettings->setAttribute(QWebEngineSettings::LocalContentCanAccessRemoteUrls, true);
+    webSettings->setAttribute(QWebEngineSettings::FocusOnNavigationEnabled, false);
 
     webSettings->setDefaultTextEncoding(settings.value("DefaultEncoding", webSettings->defaultTextEncoding()).toString());
 
@@ -1090,7 +1092,8 @@ void MainApplication::checkDefaultWebBrowser()
         dialog.setIcon(QMessageBox::Warning);
 
         if (dialog.exec() == QMessageBox::Yes) {
-            associationManager()->registerAllAssociation();
+            if (!mApp->associationManager()->showNativeDefaultAppSettingsUi())
+                mApp->associationManager()->registerAllAssociation();
         }
 
         checkAgain = dialog.isChecked();
@@ -1198,7 +1201,6 @@ RegisterQAppAssociation* MainApplication::associationManager()
         m_registerQAppAssociation->addCapability(".htm", "QupZilla.HTM", "HTM File", fileIconPath, RegisterQAppAssociation::FileAssociation);
         m_registerQAppAssociation->addCapability("http", "QupZilla.HTTP", "URL:HyperText Transfer Protocol", appIconPath, RegisterQAppAssociation::UrlAssociation);
         m_registerQAppAssociation->addCapability("https", "QupZilla.HTTPS", "URL:HyperText Transfer Protocol with Privacy", appIconPath, RegisterQAppAssociation::UrlAssociation);
-        m_registerQAppAssociation->addCapability("ftp", "QupZilla.FTP", "URL:File Transfer Protocol", appIconPath, RegisterQAppAssociation::UrlAssociation);
     }
     return m_registerQAppAssociation;
 }

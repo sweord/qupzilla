@@ -131,7 +131,7 @@ public slots:
     void toggleTabsOnTop(bool enable);
 
     void toggleFullScreen();
-    void enterHtmlFullScreen();
+    void toggleHtmlFullScreen(bool enable);
 
     void loadActionUrl(QObject* obj = 0);
     void loadActionUrlInNewTab(QObject* obj = 0);
@@ -140,6 +140,8 @@ public slots:
     void bookmarkAllTabs();
     void loadAddress(const QUrl &url);
     void showSource(WebView *view = Q_NULLPTR);
+
+    void showNormal();
 
 private slots:
     void addTab();
@@ -211,7 +213,8 @@ private:
     bool m_menuBarVisible;
     bool m_statusBarVisible;
     bool m_isHtmlFullScreen;
-    Qt::WindowStates m_windowStates;
+    Qt::WindowStates m_oldWindowState = Qt::WindowNoState;
+    Qt::WindowStates m_normalWindowState = Qt::WindowNoState;
     QTimer* m_hideNavigationTimer;
 
     QList<QPointer<QWidget> > m_deleteOnCloseWidgets;

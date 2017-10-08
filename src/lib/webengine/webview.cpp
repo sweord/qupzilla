@@ -145,6 +145,11 @@ void WebView::setPage(WebPage *page)
         return;
     }
 
+    if (m_page) {
+        m_page->setView(nullptr);
+        m_page->deleteLater();
+    }
+
     m_page = page;
     m_page->setParent(this);
     QWebEngineView::setPage(m_page);
@@ -417,6 +422,11 @@ void WebView::slotLoadProgress(int progress)
 {
     if (m_progress < 100) {
         m_progress = progress;
+    }
+
+    // QtWebEngine sometimes forgets applied zoom factor
+    if (!qFuzzyCompare(zoomFactor(), zoomLevels().at(m_currentZoomLevel) / 100.0)) {
+        applyZoom();
     }
 }
 
@@ -1244,10 +1254,14 @@ void WebView::contextMenuEvent(QContextMenuEvent *event)
 
 void WebView::loadRequest(const LoadRequest &req)
 {
+#if QT_VERSION >= QT_VERSION_CHECK(5, 9, 0)
+    QWebEngineView::load(req.webRequest());
+#else
     if (req.operation() == LoadRequest::GetOperation)
         load(req.url());
     else
         page()->runJavaScript(Scripts::sendPostData(req.url(), req.data()), WebPage::SafeJsWorld);
+#endif
 }
 
 bool WebView::eventFilter(QObject *obj, QEvent *event)

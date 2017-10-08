@@ -51,7 +51,7 @@ PluginSpec TabManagerPlugin::pluginSpec()
     spec.name = "Tab Manager";
     spec.info = "Simple yet powerful tab manager for QupZilla";
     spec.description = "Adds ability to managing tabs and windows";
-    spec.version = "0.7.0";
+    spec.version = "0.8.0";
     spec.author = "Razi Alavizadeh <s.r.alavizadeh@gmail.com>";
     spec.icon = QPixmap(":tabmanager/data/tabmanager.png");
     spec.hasSettings = true;
@@ -152,7 +152,7 @@ void TabManagerPlugin::mainWindowCreated(BrowserWindow* window, bool refresh)
         }
 
         connect(window->tabWidget(), SIGNAL(currentChanged(int)), m_controller, SIGNAL(requestRefreshTree()));
-        connect(window->tabWidget(), SIGNAL(pinStateChanged(int,bool)), m_controller, SIGNAL(pinStateChanged(int,bool)));
+        connect(window->tabWidget(), SIGNAL(pinStateChanged(int,bool)), m_controller, SIGNAL(requestRefreshTree()));
     }
 
     if (refresh) {

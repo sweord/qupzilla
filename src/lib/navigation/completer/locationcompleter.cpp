@@ -1,6 +1,6 @@
 /* ============================================================
-* QupZilla - WebKit based browser
-* Copyright (C) 2010-2014  David Rosca <nowrep@gmail.com>
+* QupZilla - Qt web browser
+* Copyright (C) 2010-2017 David Rosca <nowrep@gmail.com>
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -28,6 +28,10 @@
 #include "bookmarks.h"
 #include "bookmarkitem.h"
 #include "qzsettings.h"
+#include "opensearchengine.h"
+#include "networkmanager.h"
+
+#include <QWindow>
 
 LocationCompleterView* LocationCompleter::s_view = 0;
 LocationCompleterModel* LocationCompleter::s_model = 0;
@@ -75,6 +79,18 @@ void LocationCompleter::complete(const QString &string)
     LocationCompleterRefreshJob* job = new LocationCompleterRefreshJob(trimmedStr);
     connect(job, SIGNAL(finished()), this, SLOT(refreshJobFinished()));
     connect(this, SIGNAL(cancelRefreshJob()), job, SLOT(jobCancelled()));
+
+    if (qzSettings->searchFromAddressBar && trimmedStr.length() > 2) {
+        if (!m_openSearchEngine) {
+            m_openSearchEngine = new OpenSearchEngine(this);
+            m_openSearchEngine->setNetworkAccessManager(mApp->networkManager());
+            connect(m_openSearchEngine, &OpenSearchEngine::suggestions, this, &LocationCompleter::addSuggestions);
+        }
+        m_openSearchEngine->setSuggestionsUrl(LocationBar::searchEngine().suggestionsUrl);
+        m_openSearchEngine->setSuggestionsParameters(LocationBar::searchEngine().suggestionsParameters);
+        m_suggestionsTerm = trimmedStr;
+        m_openSearchEngine->requestSuggestions(m_suggestionsTerm);
+    }
 }
 
 void LocationCompleter::showMostVisited()
@@ -94,9 +110,19 @@ void LocationCompleter::refreshJobFinished()
         m_lastRefreshTimestamp = job->timestamp();
 
         showPopup();
+        addSuggestions(m_oldSuggestions);
+
+        if (!s_view->currentIndex().isValid() && s_model->index(0, 0).data(LocationCompleterModel::VisitSearchItemRole).toBool()) {
+            m_ignoreCurrentChanged = true;
+            s_view->setCurrentIndex(s_model->index(0, 0));
+            m_ignoreCurrentChanged = false;
+        }
 
         if (qzSettings->useInlineCompletion) {
             emit showDomainCompletion(job->domainCompletion());
+
+            m_originalText = m_locationBar->text();
+            s_view->setOriginalText(m_originalText);
         }
     }
 
@@ -105,6 +131,8 @@ void LocationCompleter::refreshJobFinished()
 
 void LocationCompleter::slotPopupClosed()
 {
+    m_oldSuggestions.clear();
+
     disconnect(s_view, SIGNAL(closed()), this, SLOT(slotPopupClosed()));
     disconnect(s_view, SIGNAL(indexActivated(QModelIndex)), this, SLOT(indexActivated(QModelIndex)));
     disconnect(s_view, SIGNAL(indexCtrlActivated(QModelIndex)), this, SLOT(indexCtrlActivated(QModelIndex)));
@@ -115,25 +143,59 @@ void LocationCompleter::slotPopupClosed()
     emit popupClosed();
 }
 
+void LocationCompleter::addSuggestions(const QStringList &suggestions)
+{
+    const auto suggestionItems = s_model->suggestionItems();
+
+    // Delete existing suggestions
+    for (QStandardItem *item : suggestionItems) {
+        s_model->takeRow(item->row());
+        delete item;
+    }
+
+    // Add new suggestions
+    QList<QStandardItem*> items;
+    for (const QString &suggestion : suggestions) {
+        QStandardItem* item = new QStandardItem();
+        item->setText(suggestion);
+        item->setData(suggestion, LocationCompleterModel::TitleRole);
+        item->setData(suggestion, LocationCompleterModel::UrlRole);
+        item->setData(m_suggestionsTerm, LocationCompleterModel::SearchStringRole);
+        item->setData(true, LocationCompleterModel::SearchSuggestionRole);
+        items.append(item);
+    }
+
+    s_model->addCompletions(items);
+    adjustPopupSize();
+    m_oldSuggestions = suggestions;
+}
+
 void LocationCompleter::currentChanged(const QModelIndex &index)
 {
+    if (m_ignoreCurrentChanged) {
+        return;
+    }
+
     QString completion = index.data().toString();
 
-    bool isOriginal = false;
+    bool completeDomain = index.data(LocationCompleterModel::VisitSearchItemRole).toBool();
+
+    // Domain completion was dismissed
+    if (completeDomain && completion == m_originalText) {
+        completeDomain = false;
+    }
 
     if (completion.isEmpty()) {
-        isOriginal = true;
+        completeDomain = true;
         completion = m_originalText;
     }
 
-    emit showCompletion(completion, isOriginal);
+    emit showCompletion(completion, completeDomain);
 }
 
 void LocationCompleter::indexActivated(const QModelIndex &index)
 {
     Q_ASSERT(index.isValid());
-
-    const QUrl url = index.data(LocationCompleterModel::UrlRole).toUrl();
 
     bool ok;
     const int tabPos = index.data(LocationCompleterModel::TabPositionTabRole).toInt(&ok);
@@ -151,7 +213,13 @@ void LocationCompleter::indexActivated(const QModelIndex &index)
         bookmark->updateVisitCount();
     }
 
-    loadUrl(url);
+    QString urlString = index.data(LocationCompleterModel::UrlRole).toString();
+
+    if (index.data(LocationCompleterModel::VisitSearchItemRole).toBool()) {
+        urlString = m_originalText;
+    }
+
+    loadString(urlString);
 }
 
 void LocationCompleter::indexCtrlActivated(const QModelIndex &index)
@@ -185,12 +253,12 @@ void LocationCompleter::indexShiftActivated(const QModelIndex &index)
         bookmark->updateVisitCount();
     }
 
-    const QUrl url = index.data(LocationCompleterModel::UrlRole).toUrl();
+    const QString urlString = index.data(LocationCompleterModel::UrlRole).toString();
     const int tabPos = index.data(LocationCompleterModel::TabPositionTabRole).toInt();
 
     // Load url (instead of switching to tab) with shift activation
     if (tabPos > -1) {
-        loadUrl(url);
+        loadString(urlString);
         return;
     }
 
@@ -200,7 +268,7 @@ void LocationCompleter::indexShiftActivated(const QModelIndex &index)
     emit clearCompletion();
 
     // Open new window
-    mApp->createWindow(Qz::BW_NewWindow, url);
+    mApp->createWindow(Qz::BW_NewWindow, QUrl(urlString));
 }
 
 void LocationCompleter::indexDeleteRequested(const QModelIndex &index)
@@ -254,12 +322,12 @@ void LocationCompleter::switchToTab(BrowserWindow* window, int tab)
     }
 }
 
-void LocationCompleter::loadUrl(const QUrl &url)
+void LocationCompleter::loadString(const QString &urlString)
 {
     closePopup();
 
     // Show url in locationbar
-    emit showCompletion(url.toEncoded(), false);
+    emit showCompletion(urlString, false);
 
     // Load url
     emit loadCompletion();
@@ -293,16 +361,22 @@ void LocationCompleter::showPopup()
     connect(s_view, SIGNAL(indexDeleteRequested(QModelIndex)), this, SLOT(indexDeleteRequested(QModelIndex)));
     connect(s_view->selectionModel(), SIGNAL(currentChanged(QModelIndex,QModelIndex)), this, SLOT(currentChanged(QModelIndex)));
 
+    if (m_locationBar->nativeParentWidget()) {
+        s_view->createWinId();
+        s_view->windowHandle()->setTransientParent(m_locationBar->nativeParentWidget()->windowHandle());
+    }
+
     adjustPopupSize();
 }
 
 void LocationCompleter::adjustPopupSize()
 {
-    const int maxItemsCount = 6;
+    const int maxItemsCount = 12;
     const int popupHeight = s_view->sizeHintForRow(0) * qMin(maxItemsCount, s_model->rowCount()) + 2 * s_view->frameWidth();
+
+    m_originalText = m_locationBar->text();
+    s_view->setOriginalText(m_originalText);
 
     s_view->resize(s_view->width(), popupHeight);
     s_view->show();
-
-    m_originalText = m_locationBar->text();
 }

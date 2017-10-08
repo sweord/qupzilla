@@ -81,6 +81,11 @@ void MainMenu::initSuperMenu(QMenu* superMenu) const
     superMenu->addAction(m_actions[QSL("File/NewPrivateWindow")]);
     superMenu->addAction(m_actions[QSL("File/OpenFile")]);
     superMenu->addSeparator();
+    QMenu* sessionsSubmenu = new QMenu(tr("Sessions"));
+    connect(sessionsSubmenu, SIGNAL(aboutToShow()), mApp->sessionManager(), SLOT(aboutToShowSessionsMenu()));
+    superMenu->addMenu(sessionsSubmenu);
+    superMenu->addAction(m_actions[QSL("File/SessionManager")]);
+    superMenu->addSeparator();
     superMenu->addAction(m_actions[QSL("File/SendLink")]);
     superMenu->addAction(m_actions[QSL("File/Print")]);
     superMenu->addSeparator();
@@ -90,17 +95,14 @@ void MainMenu::initSuperMenu(QMenu* superMenu) const
     superMenu->addAction(m_menuHistory->actions().at(3));
     superMenu->addAction(m_menuBookmarks->actions().at(2));
     superMenu->addSeparator();
-    superMenu->addAction(m_actions[QSL("Standard/Preferences")]);
-    superMenu->addSeparator();
     superMenu->addMenu(m_menuView);
     superMenu->addMenu(m_menuHistory);
     superMenu->addMenu(m_menuBookmarks);
     superMenu->addMenu(m_menuTools);
+    superMenu->addMenu(m_menuHelp);
     superMenu->addSeparator();
+    superMenu->addAction(m_actions[QSL("Standard/Preferences")]);
     superMenu->addAction(m_actions[QSL("Standard/About")]);
-    superMenu->addAction(m_actions[QSL("Help/InfoAboutApp")]);
-    superMenu->addAction(m_actions[QSL("Help/ConfigInfo")]);
-    superMenu->addAction(m_actions[QSL("Help/ReportIssue")]);
     superMenu->addSeparator();
     superMenu->addAction(m_actions[QSL("Standard/Quit")]);
 
@@ -532,17 +534,13 @@ void MainMenu::init()
     m_menuFile->addSeparator();
 
     if (!mApp->isPrivate()) {
-        action = new QAction(tr("New Session..."), this);
-        connect(action, SIGNAL(triggered()), mApp->sessionManager(), SLOT(newSession()));
-        m_actions[QSL("File/NewSession")] = action;
-        m_menuFile->addAction(action);
-        action = new QAction(tr("Save Session..."), this);
-        connect(action, SIGNAL(triggered()), mApp->sessionManager(), SLOT(saveSession()));
-        m_actions[QSL("File/SaveSession")] = action;
-        m_menuFile->addAction(action);
         QMenu* sessionsSubmenu = new QMenu(tr("Sessions"));
         connect(sessionsSubmenu, SIGNAL(aboutToShow()), mApp->sessionManager(), SLOT(aboutToShowSessionsMenu()));
         m_menuFile->addMenu(sessionsSubmenu);
+        action = new QAction(tr("Session Manager"), this);
+        connect(action, SIGNAL(triggered()), mApp->sessionManager(), SLOT(openSessionManagerDialog()));
+        m_actions[QSL("File/SessionManager")] = action;
+        m_menuFile->addAction(action);
         m_menuFile->addSeparator();
     }
 

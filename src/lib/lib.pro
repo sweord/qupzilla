@@ -5,7 +5,7 @@ TEMPLATE = lib
 
 DEFINES *= QUPZILLA_SHAREDLIBRARY
 
-CONFIG += c++11
+CONFIG += c++14
 
 include(../defines.pri)
 include(../../translations/translations.pri)
@@ -167,6 +167,7 @@ SOURCES += \
     session/recoveryjsobject.cpp \
     session/restoremanager.cpp \
     session/sessionmanager.cpp \
+    session/sessionmanagerdialog.cpp \
     sidebar/bookmarkssidebar.cpp \
     sidebar/historysidebar.cpp \
     sidebar/sidebar.cpp \
@@ -175,6 +176,7 @@ SOURCES += \
     tabwidget/tabicon.cpp \
     tabwidget/tabstackedwidget.cpp \
     tabwidget/tabwidget.cpp \
+    tabwidget/tabcontextmenu.cpp \
     tools/aesinterface.cpp \
     tools/animatedwidget.cpp \
     tools/buttonbox.cpp \
@@ -202,11 +204,13 @@ SOURCES += \
     tools/progressbar.cpp \
     tools/qzregexp.cpp \
     tools/qztools.cpp \
+    tools/removeitemfocusdelegate.cpp \
     tools/scripts.cpp \
     tools/sqldatabase.cpp \
     tools/toolbutton.cpp \
     tools/treewidget.cpp \
     tools/widget.cpp \
+    tools/wheelhelper.cpp \
     webengine/javascript/autofilljsobject.cpp \
     webengine/javascript/externaljsobject.cpp \
     webengine/loadrequest.cpp \
@@ -219,7 +223,6 @@ SOURCES += \
     webtab/searchtoolbar.cpp \
     webtab/tabbedwebview.cpp \
     webtab/webtab.cpp \
-    tools/wheelhelper.cpp \
 
 HEADERS  += \
     3rdparty/fancytabwidget.h \
@@ -349,6 +352,7 @@ HEADERS  += \
     session/recoveryjsobject.h \
     session/restoremanager.h \
     session/sessionmanager.h \
+    session/sessionmanagerdialog.h \
     sidebar/bookmarkssidebar.h \
     sidebar/historysidebar.h \
     sidebar/sidebar.h \
@@ -358,6 +362,7 @@ HEADERS  += \
     tabwidget/tabicon.h \
     tabwidget/tabstackedwidget.h \
     tabwidget/tabwidget.h \
+    tabwidget/tabcontextmenu.h \
     tools/aesinterface.h \
     tools/animatedwidget.h \
     tools/buttonbox.h \
@@ -385,11 +390,13 @@ HEADERS  += \
     tools/progressbar.h \
     tools/qzregexp.h \
     tools/qztools.h \
+    tools/removeitemfocusdelegate.h \
     tools/scripts.h \
     tools/sqldatabase.h \
     tools/toolbutton.h \
     tools/treewidget.h \
     tools/widget.h \
+    tools/wheelhelper.h \
     webengine/javascript/autofilljsobject.h \
     webengine/javascript/externaljsobject.h \
     webengine/loadrequest.h \
@@ -402,7 +409,6 @@ HEADERS  += \
     webtab/searchtoolbar.h \
     webtab/tabbedwebview.h \
     webtab/webtab.h \
-    tools/wheelhelper.h \
 
 FORMS    += \
     adblock/adblockaddsubscriptiondialog.ui \
@@ -437,6 +443,7 @@ FORMS    += \
     preferences/preferences.ui \
     preferences/thememanager.ui \
     preferences/useragentdialog.ui \
+    session/sessionmanagerdialog.ui \
     sidebar/bookmarkssidebar.ui \
     sidebar/historysidebar.ui \
     tools/certificateinfowidget.ui \
@@ -481,7 +488,7 @@ os2 {
 
 mac {
     # homebrew openssl
-    BREW_OPENSSL = $$system("brew --prefix openssl")
+    BREW_OPENSSL = /usr/local$$system("readlink `brew --prefix openssl` | sed 's/..//'")
     INCLUDEPATH += $$BREW_OPENSSL/include
     LIBS += -L$$BREW_OPENSSL/lib
 

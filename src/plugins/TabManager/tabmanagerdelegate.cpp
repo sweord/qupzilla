@@ -17,6 +17,7 @@
 * along with this program.  If not, see <http://www.gnu.org/licenses/>.
 * ============================================================ */
 #include "tabmanagerdelegate.h"
+#include "tabmanagerwidget.h"
 
 #include <QPainter>
 #include <QApplication>
@@ -36,10 +37,12 @@ void TabManagerDelegate::paint(QPainter* painter, const QStyleOptionViewItem &op
     const QWidget* w = opt.widget;
     const QStyle* style = w ? w->style() : QApplication::style();
     const Qt::LayoutDirection direction = w ? w->layoutDirection() : QApplication::layoutDirection();
+    const bool isActiveOrCaption = index.data(TabItem::ActiveOrCaptionRole).toBool();
+    const bool isSavedTab = index.data(TabItem::SavedRole).toBool();
 
     const QPalette::ColorRole colorRole = opt.state & QStyle::State_Selected ? QPalette::HighlightedText : QPalette::Text;
 
-    QPalette::ColorGroup cg = opt.state & QStyle::State_Enabled ? QPalette::Normal : QPalette::Disabled;
+    QPalette::ColorGroup cg = (opt.state & QStyle::State_Enabled) && !isSavedTab ? QPalette::Normal : QPalette::Disabled;
     if (cg == QPalette::Normal && !(opt.state & QStyle::State_Active)) {
         cg = QPalette::Inactive;
     }
@@ -110,11 +113,6 @@ void TabManagerDelegate::paint(QPainter* painter, const QStyleOptionViewItem &op
     if (!opt.text.isEmpty()) {
         const QString filterText = property("filterText").toString();
 
-        QPalette::ColorGroup cg = opt.state & QStyle::State_Enabled
-                              ? QPalette::Normal : QPalette::Disabled;
-        if (cg == QPalette::Normal && !(opt.state & QStyle::State_Active))
-            cg = QPalette::Inactive;
-
         if (opt.state & QStyle::State_Selected) {
             painter->setPen(opt.palette.color(cg, QPalette::HighlightedText));
         } else {
@@ -124,6 +122,11 @@ void TabManagerDelegate::paint(QPainter* painter, const QStyleOptionViewItem &op
             painter->setPen(opt.palette.color(cg, QPalette::Text));
             painter->drawRect(textRect.adjusted(0, 0, -1, -1));
         }
+
+        if (isSavedTab)
+            opt.font.setItalic(true);
+        else if (isActiveOrCaption)
+            opt.font.setBold(true);
 
         painter->setFont(opt.font);
         viewItemDrawText(painter, &opt, textRect, opt.text, textPalette.color(colorRole), filterText);

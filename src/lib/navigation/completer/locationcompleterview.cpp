@@ -21,7 +21,6 @@
 
 #include <QKeyEvent>
 #include <QApplication>
-#include <QStyle>
 #include <QScrollBar>
 
 LocationCompleterView::LocationCompleterView()
@@ -31,15 +30,11 @@ LocationCompleterView::LocationCompleterView()
     setAttribute(Qt::WA_ShowWithoutActivating);
     setAttribute(Qt::WA_X11NetWmWindowTypeCombo);
 
-#ifdef Q_OS_LINUX
-    if (qApp->platformName() == QLatin1String("wayland")) {
-        setWindowFlags(Qt::Popup);
-    } else {
+    if (qApp->platformName() == QL1S("xcb")) {
         setWindowFlags(Qt::Window | Qt::FramelessWindowHint | Qt::BypassWindowManagerHint);
+    } else {
+        setWindowFlags(Qt::Popup);
     }
-#else
-    setWindowFlags(Qt::Popup);
-#endif
 
     setUniformItemSizes(true);
     setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -55,9 +50,9 @@ LocationCompleterView::LocationCompleterView()
     setItemDelegate(m_delegate);
 }
 
-QPersistentModelIndex LocationCompleterView::hoveredIndex() const
+void LocationCompleterView::setOriginalText(const QString &originalText)
 {
-    return m_hoveredIndex;
+    m_delegate->setOriginalText(originalText);
 }
 
 bool LocationCompleterView::eventFilter(QObject* object, QEvent* event)
@@ -72,7 +67,8 @@ bool LocationCompleterView::eventFilter(QObject* object, QEvent* event)
     case QEvent::KeyPress: {
         QKeyEvent* keyEvent = static_cast<QKeyEvent*>(event);
         Qt::KeyboardModifiers modifiers = keyEvent->modifiers();
-        QModelIndex idx = m_hoveredIndex;
+        const QModelIndex idx = currentIndex();
+        const QModelIndex visitSearchIdx = model()->index(0, 0).data(LocationCompleterModel::VisitSearchItemRole).toBool() ? model()->index(0, 0) : QModelIndex();
 
         if ((keyEvent->key() == Qt::Key_Up || keyEvent->key() == Qt::Key_Down) && currentIndex() != idx) {
             setCurrentIndex(idx);
@@ -122,7 +118,7 @@ bool LocationCompleterView::eventFilter(QObject* object, QEvent* event)
 
         case Qt::Key_Escape:
             close();
-            return false;
+            return true;
 
         case Qt::Key_F4:
             if (modifiers == Qt::AltModifier)  {
@@ -143,7 +139,7 @@ bool LocationCompleterView::eventFilter(QObject* object, QEvent* event)
         }
 
         case Qt::Key_Up:
-            if (!idx.isValid()) {
+            if (!idx.isValid() || idx == visitSearchIdx) {
                 int rowCount = model()->rowCount();
                 QModelIndex lastIndex = model()->index(rowCount - 1, 0);
                 setCurrentIndex(lastIndex);
@@ -158,8 +154,8 @@ bool LocationCompleterView::eventFilter(QObject* object, QEvent* event)
             if (!idx.isValid()) {
                 QModelIndex firstIndex = model()->index(0, 0);
                 setCurrentIndex(firstIndex);
-            } else if (idx.row() == model()->rowCount() - 1) {
-                setCurrentIndex(QModelIndex());
+            } else if (idx != visitSearchIdx && idx.row() == model()->rowCount() - 1) {
+                setCurrentIndex(visitSearchIdx);
                 scrollToTop();
             } else {
                 setCurrentIndex(model()->index(idx.row() + 1, 0));
@@ -167,7 +163,7 @@ bool LocationCompleterView::eventFilter(QObject* object, QEvent* event)
             return true;
 
         case Qt::Key_Delete:
-            if (viewport()->rect().contains(visualRect(idx))) {
+            if (idx != visitSearchIdx && viewport()->rect().contains(visualRect(idx))) {
                 emit indexDeleteRequested(idx);
                 return true;
             }
@@ -189,7 +185,7 @@ bool LocationCompleterView::eventFilter(QObject* object, QEvent* event)
 
         case Qt::Key_Shift:
             // don't switch if there is no hovered or selected index to not disturb typing
-            if (idx.isValid() || m_hoveredIndex.isValid()) {
+            if (idx != visitSearchIdx || underMouse()) {
                 m_delegate->setShowSwitchToTab(false);
                 viewport()->update();
                 return true;
@@ -197,7 +193,9 @@ bool LocationCompleterView::eventFilter(QObject* object, QEvent* event)
             break;
         } // switch (keyEvent->key())
 
-        (static_cast<QObject*>(focusProxy()))->event(keyEvent);
+        if (focusProxy()) {
+            (static_cast<QObject*>(focusProxy()))->event(keyEvent);
+        }
         return true;
     }
 
@@ -228,7 +226,7 @@ bool LocationCompleterView::eventFilter(QObject* object, QEvent* event)
 
     case QEvent::FocusOut: {
         QFocusEvent *focusEvent = static_cast<QFocusEvent*>(event);
-        if (focusEvent->reason() != Qt::PopupFocusReason) {
+        if (focusEvent->reason() != Qt::PopupFocusReason && focusEvent->reason() != Qt::MouseFocusReason) {
             close();
         }
         break;
@@ -237,7 +235,7 @@ bool LocationCompleterView::eventFilter(QObject* object, QEvent* event)
     case QEvent::Move:
     case QEvent::Resize: {
         QWidget *w = qobject_cast<QWidget*>(object);
-        if (w && w->isWindow() && w == focusProxy()->window()) {
+        if (w && w->isWindow() && focusProxy() && w == focusProxy()->window()) {
             close();
         }
         break;
@@ -255,63 +253,34 @@ void LocationCompleterView::close()
     QListView::hide();
     verticalScrollBar()->setValue(0);
 
-    m_hoveredIndex = QPersistentModelIndex();
     m_delegate->setShowSwitchToTab(true);
 
     emit closed();
 }
 
-void LocationCompleterView::currentChanged(const QModelIndex &current, const QModelIndex &previous)
+void LocationCompleterView::mouseReleaseEvent(QMouseEvent* event)
 {
-    m_hoveredIndex = current;
-
-    QListView::currentChanged(current, previous);
-
-    viewport()->update();
-}
-
-void LocationCompleterView::mouseMoveEvent(QMouseEvent* event)
-{
-    if (m_ignoreNextMouseMove || !isVisible()) {
-        m_ignoreNextMouseMove = false;
-        QListView::mouseMoveEvent(event);
+    QModelIndex idx = indexAt(event->pos());
+    if (!idx.isValid()) {
         return;
     }
 
-    QModelIndex last = m_hoveredIndex;
-    QModelIndex atCursor = indexAt(mapFromGlobal(QCursor::pos()));
+    Qt::MouseButton button = event->button();
+    Qt::KeyboardModifiers modifiers = event->modifiers();
 
-    if (atCursor.isValid()) {
-        m_hoveredIndex = atCursor;
+    if (button == Qt::LeftButton && modifiers == Qt::NoModifier) {
+        emit indexActivated(idx);
+        return;
     }
 
-    if (last != atCursor) {
-        viewport()->update();
+    if (button == Qt::MiddleButton || (button == Qt::LeftButton && modifiers == Qt::ControlModifier)) {
+        emit indexCtrlActivated(idx);
+        return;
     }
 
-    QListView::mouseMoveEvent(event);
-}
-
-void LocationCompleterView::mouseReleaseEvent(QMouseEvent* event)
-{
-    if (m_hoveredIndex.isValid()) {
-        Qt::MouseButton button = event->button();
-        Qt::KeyboardModifiers modifiers = event->modifiers();
-
-        if (button == Qt::LeftButton && modifiers == Qt::NoModifier) {
-            emit indexActivated(m_hoveredIndex);
-            return;
-        }
-
-        if (button == Qt::MiddleButton || (button == Qt::LeftButton && modifiers == Qt::ControlModifier)) {
-            emit indexCtrlActivated(m_hoveredIndex);
-            return;
-        }
-
-        if (button == Qt::LeftButton && modifiers == Qt::ShiftModifier) {
-            emit indexShiftActivated(m_hoveredIndex);
-            return;
-        }
+    if (button == Qt::LeftButton && modifiers == Qt::ShiftModifier) {
+        emit indexShiftActivated(idx);
+        return;
     }
 
     QListView::mouseReleaseEvent(event);

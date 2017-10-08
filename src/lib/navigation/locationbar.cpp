@@ -1,6 +1,6 @@
 /* ============================================================
-* QupZilla - WebKit based browser
-* Copyright (C) 2010-2016  David Rosca <nowrep@gmail.com>
+* QupZilla - Qt web browser
+* Copyright (C) 2010-2017 David Rosca <nowrep@gmail.com>
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -33,7 +33,6 @@
 #include "qzsettings.h"
 #include "colors.h"
 #include "autofillicon.h"
-#include "searchenginesmanager.h"
 #include "completer/locationcompleter.h"
 
 #include <QTimer>
@@ -146,22 +145,19 @@ void LocationBar::setText(const QString &text)
 void LocationBar::updatePlaceHolderText()
 {
     if (qzSettings->searchFromAddressBar) {
-        QString engineName = qzSettings->searchWithDefaultEngine ?
-                             mApp->searchEnginesManager()->defaultEngine().name :
-                             mApp->searchEnginesManager()->activeEngine().name;
-        setPlaceholderText(tr("Enter URL address or search on %1").arg(engineName));
+        setPlaceholderText(tr("Enter address or search with %1").arg(searchEngine().name));
     } else
-        setPlaceholderText(tr("Enter URL address"));
+        setPlaceholderText(tr("Enter address"));
 }
 
-void LocationBar::showCompletion(const QString &completion, bool isOriginal)
+void LocationBar::showCompletion(const QString &completion, bool completeDomain)
 {
     LineEdit::setText(completion);
 
     // Move cursor to the end
     end(false);
 
-    if (isOriginal) {
+    if (completeDomain) {
         completer()->complete();
     }
 }
@@ -213,14 +209,18 @@ LoadRequest LocationBar::createLoadRequest() const
         // would convert it to QUrl("http://WORD")
         if (!t.contains(QL1C(' ')) && !t.contains(QL1C('.'))) {
             req.setUrl(QUrl(t));
-        }
-        else {
+        } else {
             const QUrl &guessed = QUrl::fromUserInput(t);
             if (!guessed.isEmpty())
                 req.setUrl(guessed);
             else
                 req.setUrl(QUrl::fromEncoded(t.toUtf8()));
         }
+    }
+
+    // Search when creating url failed
+    if (!req.url().isValid()) {
+        req = mApp->searchEnginesManager()->searchResult(t);
     }
 
     return req;
@@ -240,6 +240,17 @@ QString LocationBar::convertUrlToText(const QUrl &url)
     }
 
     return stringUrl;
+}
+
+SearchEnginesManager::Engine LocationBar::searchEngine()
+{
+    if (!qzSettings->searchFromAddressBar) {
+        return SearchEnginesManager::Engine();
+    } else if (qzSettings->searchWithDefaultEngine) {
+        return mApp->searchEnginesManager()->defaultEngine();
+    } else {
+        return mApp->searchEnginesManager()->activeEngine();
+    }
 }
 
 void LocationBar::refreshTextFormat()

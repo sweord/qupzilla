@@ -1,6 +1,6 @@
 /* ============================================================
-* QupZilla - WebKit based browser
-* Copyright (C) 2010-2014  David Rosca <nowrep@gmail.com>
+* QupZilla - Qt web browser
+* Copyright (C) 2010-2017 David Rosca <nowrep@gmail.com>
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -27,6 +27,7 @@ class QModelIndex;
 
 class LocationBar;
 class BrowserWindow;
+class OpenSearchEngine;
 class LocationCompleterModel;
 class LocationCompleterView;
 
@@ -46,7 +47,7 @@ public slots:
     void showMostVisited();
 
 signals:
-    void showCompletion(const QString &completion, bool isOriginal);
+    void showCompletion(const QString &completion, bool completeDomain);
     void showDomainCompletion(const QString &completion);
     void loadCompletion();
     void clearCompletion();
@@ -56,9 +57,9 @@ signals:
 private slots:
     void refreshJobFinished();
     void slotPopupClosed();
+    void addSuggestions(const QStringList &suggestions);
 
     void currentChanged(const QModelIndex &index);
-
     void indexActivated(const QModelIndex &index);
     void indexCtrlActivated(const QModelIndex &index);
     void indexShiftActivated(const QModelIndex &index);
@@ -66,7 +67,7 @@ private slots:
 
 private:
     void switchToTab(BrowserWindow* window, int tab);
-    void loadUrl(const QUrl &url);
+    void loadString(const QString &url);
 
     void showPopup();
     void adjustPopupSize();
@@ -76,6 +77,10 @@ private:
     qint64 m_lastRefreshTimestamp;
     QString m_originalText;
     bool m_popupClosed;
+    bool m_ignoreCurrentChanged = false;
+    OpenSearchEngine* m_openSearchEngine = nullptr;
+    QStringList m_oldSuggestions;
+    QString m_suggestionsTerm;
 
     static LocationCompleterView* s_view;
     static LocationCompleterModel* s_model;

@@ -683,6 +683,15 @@ void BrowserWindow::showSource(WebView *view)
     view->showSource();
 }
 
+void BrowserWindow::showNormal()
+{
+    if (m_normalWindowState & Qt::WindowMaximized) {
+        QMainWindow::showMaximized();
+    } else {
+        QMainWindow::showNormal();
+    }
+}
+
 SideBar* BrowserWindow::addSideBar()
 {
     if (m_sideBar) {
@@ -786,15 +795,22 @@ void BrowserWindow::toggleFullScreen()
     }
 
     if (isFullScreen())
-        setWindowState(windowState() & ~Qt::WindowFullScreen);
+        showNormal();
     else
-        setWindowState(windowState() | Qt::WindowFullScreen);
+        showFullScreen();
 }
 
-void BrowserWindow::enterHtmlFullScreen()
+void BrowserWindow::toggleHtmlFullScreen(bool enable)
 {
-    showFullScreen();
-    m_isHtmlFullScreen = true;
+    if (enable)
+        showFullScreen();
+    else
+        showNormal();
+
+    if (m_sideBar)
+        m_sideBar.data()->setHidden(enable);
+
+    m_isHtmlFullScreen = enable;
 }
 
 void BrowserWindow::showWebInspector()
@@ -1046,12 +1062,10 @@ void BrowserWindow::hideNavigationSlot()
 bool BrowserWindow::event(QEvent* event)
 {
     switch (event->type()) {
-    case QEvent::WindowStateChange: {
-        QWindowStateChangeEvent* ev = static_cast<QWindowStateChangeEvent*>(event);
-
-        if (!(ev->oldState() & Qt::WindowFullScreen) && windowState() & Qt::WindowFullScreen) {
+    case QEvent::WindowStateChange:
+        if (!(m_oldWindowState & Qt::WindowFullScreen) && windowState() & Qt::WindowFullScreen) {
             // Enter fullscreen
-            m_windowStates = ev->oldState();
+            m_normalWindowState = m_oldWindowState;
 
             m_statusBarVisible = statusBar()->isVisible();
 #ifndef Q_OS_MACOS
@@ -1063,7 +1077,7 @@ bool BrowserWindow::event(QEvent* event)
             m_navigationContainer->hide();
             m_navigationToolbar->buttonExitFullscreen()->show();
         }
-        else if (ev->oldState() & Qt::WindowFullScreen && !(windowState() & Qt::WindowFullScreen)) {
+        else if (m_oldWindowState & Qt::WindowFullScreen && !(windowState() & Qt::WindowFullScreen)) {
             // Leave fullscreen
             statusBar()->setVisible(m_statusBarVisible);
 #ifndef Q_OS_MACOS
@@ -1074,15 +1088,14 @@ bool BrowserWindow::event(QEvent* event)
             m_navigationToolbar->setSuperMenuVisible(!m_menuBarVisible);
             m_navigationToolbar->buttonExitFullscreen()->hide();
             m_isHtmlFullScreen = false;
-
-            setWindowState(m_windowStates);
         }
 
         if (m_hideNavigationTimer) {
             m_hideNavigationTimer->stop();
         }
+
+        m_oldWindowState = windowState();
         break;
-    }
 
     default:
         break;
@@ -1303,6 +1316,18 @@ void BrowserWindow::keyReleaseEvent(QKeyEvent* event)
 {
     if (mApp->plugins()->processKeyRelease(Qz::ON_BrowserWindow, this, event)) {
         return;
+    }
+
+    switch (event->key()) {
+    case Qt::Key_F:
+        if (event->modifiers() == Qt::ControlModifier) {
+            action(QSL("Edit/Find"))->trigger();
+            event->accept();
+        }
+        break;
+
+    default:
+        break;
     }
 
     QMainWindow::keyReleaseEvent(event);

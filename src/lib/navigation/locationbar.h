@@ -1,6 +1,6 @@
 /* ============================================================
-* QupZilla - WebKit based browser
-* Copyright (C) 2010-2016  David Rosca <nowrep@gmail.com>
+* QupZilla - Qt web browser
+* Copyright (C) 2010-2017 David Rosca <nowrep@gmail.com>
 *
 * This program is free software: you can redistribute it and/or modify
 * it under the terms of the GNU General Public License as published by
@@ -20,6 +20,7 @@
 
 #include "qzcommon.h"
 #include "lineedit.h"
+#include "searchenginesmanager.h"
 
 class QStringListModel;
 
@@ -44,6 +45,7 @@ public:
     void setWebView(TabbedWebView* view);
 
     static QString convertUrlToText(const QUrl &url);
+    static SearchEnginesManager::Engine searchEngine();
 
 public slots:
     void setText(const QString &text);
@@ -60,7 +62,7 @@ private slots:
     void setPrivacyState(bool state);
     void setGoIconVisible(bool state);
 
-    void showCompletion(const QString &completion, bool isOriginal);
+    void showCompletion(const QString &completion, bool completeDomain);
     void showDomainCompletion(const QString &completion);
     void clearCompletion();
 

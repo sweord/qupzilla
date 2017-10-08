@@ -22,19 +22,29 @@
 
 class QAction;
 class QMenu;
-
+class QFileInfo;
 
 class QUPZILLA_EXPORT SessionManager : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit SessionManager(QObject* parent = 0);
-
     struct SessionMetaData {
         QString name;
         QString filePath;
+        bool isActive = false;
+        bool isDefault = false;
+        bool isBackup = false;
     };
+
+    enum SessionFlag {
+        SwitchSession = 1,
+        CloneSession = 2,
+        ReplaceSession = SwitchSession | 4
+    };
+    Q_DECLARE_FLAGS(SessionFlags, SessionFlag)
+
+    explicit SessionManager(QObject* parent = 0);
 
     void loadSettings();
     void saveSettings();
@@ -46,22 +56,31 @@ public:
     void backupSavedSessions();
     void writeCurrentSession(const QString &filePath);
 
+signals:
+    void sessionsMetaDataChanged();
+
 public slots:
     void autoSaveLastSession();
+    void openSessionManagerDialog();
 
 private slots:
     void aboutToShowSessionsMenu();
-    void aboutToShowSessionSubmenu();
     void sessionsDirectoryChanged();
-    void switchToSession();
-    void openSession(QString sessionFilePath = QString(), bool switchSession = false);
-    void renameSession(QString sessionFilePath = QString(), bool clone = false);
-    void cloneSession();
-    void deleteSession();
+    void openSession(QString sessionFilePath = QString(), SessionFlags flags = nullptr);
+    void renameSession(QString sessionFilePath = QString(), SessionFlags flags = nullptr);
     void saveSession();
+
+    void replaceSession(const QString &filePath);
+    void switchToSession(const QString &filePath);
+    void cloneSession(const QString &filePath);
+    void deleteSession(const QString &filePath);
     void newSession();
 
+    QList<SessionMetaData> sessionMetaData(bool withBackups = true);
+
 private:
+    bool isActive(const QString &filePath) const;
+    bool isActive(const QFileInfo &fileInfo) const;
     void fillSessionsMetaDataListIfNeeded();
 
     QList<SessionMetaData> m_sessionsMetaDataList;
@@ -69,6 +88,10 @@ private:
     QString m_firstBackupSession;
     QString m_secondBackupSession;
     QString m_lastActiveSessionPath;
+
+    friend class SessionManagerDialog;
 };
+
+Q_DECLARE_OPERATORS_FOR_FLAGS(SessionManager::SessionFlags)
 
 #endif // SESSIONMANAGER_H

@@ -125,13 +125,6 @@ TabWidget::TabWidget(BrowserWindow* window, QWidget* parent)
     connect(this, &TabStackedWidget::pinStateChanged, this, &TabWidget::changed);
 
     connect(m_tabBar, SIGNAL(tabCloseRequested(int)), this, SLOT(requestCloseTab(int)));
-    connect(m_tabBar, SIGNAL(reloadTab(int)), this, SLOT(reloadTab(int)));
-    connect(m_tabBar, SIGNAL(stopTab(int)), this, SLOT(stopTab(int)));
-    connect(m_tabBar, SIGNAL(closeAllButCurrent(int)), this, SLOT(closeAllButCurrent(int)));
-    connect(m_tabBar, SIGNAL(closeToRight(int)), this, SLOT(closeToRight(int)));
-    connect(m_tabBar, SIGNAL(closeToLeft(int)), this, SLOT(closeToLeft(int)));
-    connect(m_tabBar, SIGNAL(duplicateTab(int)), this, SLOT(duplicateTab(int)));
-    connect(m_tabBar, SIGNAL(detachTab(int)), this, SLOT(detachTab(int)));
     connect(m_tabBar, SIGNAL(tabMoved(int,int)), this, SLOT(tabMoved(int,int)));
 
     connect(m_tabBar, SIGNAL(moveAddTabButton(int)), this, SLOT(moveAddTabButton(int)));
@@ -512,6 +505,8 @@ void TabWidget::currentTabChanged(int index)
     m_currentTabFresh = false;
 
     WebTab* webTab = weTab(index);
+    webTab->tabActivated();
+
     LocationBar* locBar = webTab->locationBar();
 
     if (locBar && m_locationBars->indexOf(locBar) != -1) {
@@ -656,6 +651,18 @@ void TabWidget::closeToLeft(int index)
     }
 }
 
+void TabWidget::detachTab(WebTab* tab)
+{
+    Q_ASSERT(tab);
+
+    m_locationBars->removeWidget(tab->locationBar());
+    disconnect(tab->webView(), SIGNAL(wantsCloseTab(int)), this, SLOT(closeTab(int)));
+    disconnect(tab->webView(), SIGNAL(urlChanged(QUrl)), this, SIGNAL(changed()));
+    disconnect(tab->webView(), SIGNAL(ipChanged(QString)), m_window->ipLabel(), SLOT(setText(QString)));
+
+    tab->detach();
+}
+
 void TabWidget::detachTab(int index)
 {
     WebTab* tab = weTab(index);
@@ -664,12 +671,7 @@ void TabWidget::detachTab(int index)
         return;
     }
 
-    m_locationBars->removeWidget(tab->locationBar());
-    disconnect(tab->webView(), SIGNAL(wantsCloseTab(int)), this, SLOT(closeTab(int)));
-    disconnect(tab->webView(), SIGNAL(urlChanged(QUrl)), this, SIGNAL(changed()));
-    disconnect(tab->webView(), SIGNAL(ipChanged(QString)), m_window->ipLabel(), SLOT(setText(QString)));
-
-    tab->detach();
+    detachTab(tab);
 
     BrowserWindow* window = mApp->createWindow(Qz::BW_NewWindow);
     window->setStartTab(tab);
@@ -827,9 +829,7 @@ bool TabWidget::restoreState(const QVector<WebTab::SavedTab> &tabs, int currentT
     setCurrentIndex(currentTab);
     QTimer::singleShot(0, m_tabBar, SLOT(ensureVisible(int,int)));
 
-    // WebTab is restoring state on showEvent
-    weTab()->hide();
-    weTab()->show();
+    weTab()->tabActivated();
 
     return true;
 }
