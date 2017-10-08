@@ -479,7 +479,9 @@ win32 {
     HEADERS += other/registerqappassociation.h
     SOURCES += other/registerqappassociation.cpp
 
-    LIBS += -llibeay32
+    INCLUDEPATH += D:\OpenSSL\include
+    LIBS += -LD:\OpenSSL\lib\VC -llibeay32MT -lssleay32MT
+#    LIBS += -llibeay32
 }
 
 os2 {
